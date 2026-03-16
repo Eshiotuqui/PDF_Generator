@@ -29,10 +29,6 @@ export default function RichTextEditor({ value, onChange, placeholder }) {
     triggerChange()
   }
 
-  const isActive = (cmd) => {
-    try { return document.queryCommandState(cmd) } catch { return false }
-  }
-
   return (
     <div className="rich-editor-wrapper">
       <div className="rich-toolbar">
@@ -82,21 +78,6 @@ export default function RichTextEditor({ value, onChange, placeholder }) {
           </label>
         </div>
 
-        <div className="toolbar-sep" />
-
-        <button
-          type="button"
-          className="toolbar-btn"
-          title="Remover formatação"
-          onMouseDown={(e) => {
-            e.preventDefault()
-            editorRef.current?.focus()
-            document.execCommand('removeFormat', false, null)
-            triggerChange()
-          }}
-        >
-          ✕ fmt
-        </button>
       </div>
 
       <div
