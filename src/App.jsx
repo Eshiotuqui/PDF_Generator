@@ -6,12 +6,21 @@ import SectionEditor from './components/SectionEditor'
 import ReferencesEditor from './components/ReferencesEditor'
 import { generatePDF } from './utils/pdfGenerator'
 
+const createBlock = (type = 'text') => ({
+  id: Date.now() + Math.random(),
+  type,           // 'text' | 'image'
+  content: '',    // usado por type=text
+  dataUrl: '',    // usado por type=image
+  caption: '',
+  source: '',
+  fileName: '',
+})
+
 const createSection = (id, title = '', level = 1) => ({
   id,
   title,
   level,
-  content: '',
-  images: [],
+  blocks: [createBlock('text')],
 })
 
 const initialState = {
@@ -24,6 +33,7 @@ const initialState = {
     professor: '',
     city: '',
     year: new Date().getFullYear().toString(),
+    includeCover: true,
   },
   sections: [
     createSection(1, 'Introdução', 1),

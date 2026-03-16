@@ -8,6 +8,15 @@ export default function DocumentInfo({ data, onChange }) {
             Preencha os dados que aparecerão na capa do documento conforme as normas ABNT.
           </p>
         </div>
+        <label className="switch-label">
+          <span className="switch-text">Incluir capa</span>
+          <div
+            className={`switch ${data.includeCover ? 'switch-on' : ''}`}
+            onClick={() => onChange('includeCover', !data.includeCover)}
+          >
+            <div className="switch-thumb" />
+          </div>
+        </label>
       </div>
 
       <div className="form-grid">

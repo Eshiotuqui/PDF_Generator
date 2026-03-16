@@ -1,90 +1,119 @@
 import { useRef, useState } from 'react'
-
-const LEVEL_LABELS = {
-  1: 'Seção Principal',
-  2: 'Subseção',
-  3: 'Sub-subseção',
-}
+import RichTextEditor from './RichTextEditor'
 
 const LEVEL_HINTS = {
-  1: 'Ex: 1 INTRODUÇÃO — maiúsculas, negrito',
-  2: 'Ex: 1.1 Contexto histórico — minúsculas, negrito',
-  3: 'Ex: 1.1.1 Período colonial — minúsculas, itálico',
+  1: 'Seção Principal — ex: 1 INTRODUÇÃO',
+  2: 'Subseção — ex: 1.1 Contexto histórico',
+  3: 'Sub-subseção — ex: 1.1.1 Período colonial',
+}
+
+function createBlock(type = 'text') {
+  return {
+    id: Date.now() + Math.random(),
+    type,
+    content: '',
+    dataUrl: '',
+    caption: '',
+    source: '',
+    fileName: '',
+  }
 }
 
 function getSectionNumber(sections, sectionId) {
   const counters = [0, 0, 0]
-  let result = ''
   for (const s of sections) {
     const lvl = s.level - 1
     counters[lvl]++
     for (let i = lvl + 1; i < 3; i++) counters[i] = 0
-    if (s.id === sectionId) {
-      result = counters.slice(0, s.level).join('.')
-      break
-    }
+    if (s.id === sectionId) return counters.slice(0, s.level).join('.')
   }
-  return result
+  return ''
+}
+
+// Count images in all sections before this one (for figure numbering)
+function getPrecedingImageCount(sections, sectionId) {
+  let count = 0
+  for (const s of sections) {
+    if (s.id === sectionId) break
+    count += s.blocks.filter(b => b.type === 'image').length
+  }
+  return count
 }
 
 export default function SectionEditor({ section, sections, onChange, onAddSubsection }) {
   const fileInputRef = useRef(null)
-  const [dragging, setDragging] = useState(false)
+  const [pendingBlockId, setPendingBlockId] = useState(null) // which block triggered the file input
 
   const sectionNumber = getSectionNumber(sections, section.id)
+  const precedingImages = getPrecedingImageCount(sections, section.id)
 
-  const handleImageFiles = (files) => {
-    Array.from(files).forEach(file => {
-      if (!file.type.startsWith('image/')) return
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        const newImage = {
-          id: Date.now() + Math.random(),
-          dataUrl: e.target.result,
-          caption: '',
-          source: '',
-          fileName: file.name,
-        }
-        onChange(section.id, 'images', [...section.images, newImage])
-      }
-      reader.readAsDataURL(file)
-    })
-  }
-
-  const updateImage = (imgId, field, value) => {
-    onChange(section.id, 'images', section.images.map(img =>
-      img.id === imgId ? { ...img, [field]: value } : img
+  // ── Block operations ──────────────────────────────────────────
+  const updateBlock = (blockId, fields) => {
+    onChange(section.id, 'blocks', section.blocks.map(b =>
+      b.id === blockId ? { ...b, ...fields } : b
     ))
   }
 
-  const removeImage = (imgId) => {
-    onChange(section.id, 'images', section.images.filter(img => img.id !== imgId))
+  const removeBlock = (blockId) => {
+    onChange(section.id, 'blocks', section.blocks.filter(b => b.id !== blockId))
   }
 
-  const onDrop = (e) => {
-    e.preventDefault()
-    setDragging(false)
-    handleImageFiles(e.dataTransfer.files)
+  const moveBlock = (blockId, dir) => {
+    const blocks = [...section.blocks]
+    const idx = blocks.findIndex(b => b.id === blockId)
+    const swap = dir === 'up' ? idx - 1 : idx + 1
+    if (swap < 0 || swap >= blocks.length) return
+    ;[blocks[idx], blocks[swap]] = [blocks[swap], blocks[idx]]
+    onChange(section.id, 'blocks', blocks)
   }
 
-  // Count images across all sections for sequential numbering
-  let imageCount = 0
-  for (const s of sections) {
-    if (s.id === section.id) break
-    imageCount += s.images.length
+  const addBlock = (type, afterId = null) => {
+    const newBlock = createBlock(type)
+    if (afterId === null) {
+      onChange(section.id, 'blocks', [...section.blocks, newBlock])
+    } else {
+      const idx = section.blocks.findIndex(b => b.id === afterId)
+      const blocks = [
+        ...section.blocks.slice(0, idx + 1),
+        newBlock,
+        ...section.blocks.slice(idx + 1),
+      ]
+      onChange(section.id, 'blocks', blocks)
+    }
   }
+
+  // ── Image handling ────────────────────────────────────────────
+  const handleFileInput = (files, blockId) => {
+    const file = files[0]
+    if (!file || !file.type.startsWith('image/')) return
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      updateBlock(blockId, {
+        dataUrl: e.target.result,
+        fileName: file.name,
+      })
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const openFilePicker = (blockId) => {
+    setPendingBlockId(blockId)
+    fileInputRef.current?.click()
+  }
+
+  // Figure numbers only for image blocks within this section
+  let imgIdx = 0
 
   return (
     <div className="editor-card">
+      {/* Header */}
       <div className="editor-header">
         <div className="editor-header-text">
           <h1 className="editor-title">
-            {sectionNumber && (
-              <span className="section-number-badge">{sectionNumber}</span>
-            )}{' '}
+            {sectionNumber && <span className="section-number-badge">{sectionNumber}</span>}{' '}
             {section.title || 'Sem título'}
           </h1>
-          <p className="editor-subtitle">{LEVEL_LABELS[section.level]} — {LEVEL_HINTS[section.level]}</p>
+          <p className="editor-subtitle">{LEVEL_HINTS[section.level]}</p>
         </div>
         {section.level < 3 && (
           <button className="btn btn-secondary" onClick={() => onAddSubsection(section.id)}>
@@ -105,7 +134,7 @@ export default function SectionEditor({ section, sections, onChange, onAddSubsec
             onChange={e => onChange(section.id, 'title', e.target.value)}
           />
         </div>
-        <div className="form-group" style={{ minWidth: 220 }}>
+        <div className="form-group" style={{ minWidth: 240 }}>
           <label className="form-label">Nível</label>
           <div className="level-selector">
             {[1, 2, 3].map(lvl => (
@@ -123,111 +152,132 @@ export default function SectionEditor({ section, sections, onChange, onAddSubsec
 
       <hr className="section-divider" />
 
-      {/* Content */}
-      <div className="form-group full">
-        <label className="form-label">Conteúdo / Texto</label>
-        <textarea
-          className="form-textarea"
-          placeholder="Digite o texto desta seção aqui...
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: 'none' }}
+        onChange={e => {
+          if (pendingBlockId) handleFileInput(e.target.files, pendingBlockId)
+          e.target.value = ''
+        }}
+      />
 
-Use parágrafos separados por linha em branco. O PDF será gerado com recuo de 1,25cm no início de cada parágrafo, conforme ABNT."
-          value={section.content}
-          onChange={e => onChange(section.id, 'content', e.target.value)}
-          style={{ minHeight: 240 }}
-        />
-        <span className="form-hint">
-          {section.content.trim().split(/\s+/).filter(Boolean).length} palavras •
-          Parágrafos separados por linha em branco serão recuados automaticamente (ABNT)
-        </span>
-      </div>
+      {/* Blocks */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {section.blocks.map((block, blockIndex) => {
+          const isFirst = blockIndex === 0
+          const isLast = blockIndex === section.blocks.length - 1
 
-      {/* Images */}
-      <div className="images-section">
-        <div className="images-section-header">
-          <span className="images-section-title">Figuras / Imagens</span>
-          <button
-            className="btn btn-secondary"
-            onClick={() => fileInputRef.current?.click()}
-            style={{ fontSize: 12 }}
-          >
-            + Adicionar Imagem
-          </button>
-        </div>
+          if (block.type === 'text') {
+            return (
+              <div key={block.id} className="block-card block-text">
+                <div className="block-toolbar">
+                  <span className="block-type-label">✏️ Texto</span>
+                  <div className="block-actions">
+                    <button className="block-btn" title="Mover para cima" disabled={isFirst} onClick={() => moveBlock(block.id, 'up')}>↑</button>
+                    <button className="block-btn" title="Mover para baixo" disabled={isLast} onClick={() => moveBlock(block.id, 'down')}>↓</button>
+                    <button className="block-btn danger" title="Remover bloco" onClick={() => removeBlock(block.id)}>✕</button>
+                  </div>
+                </div>
+                <RichTextEditor
+                  key={block.id}
+                  value={block.content}
+                  onChange={(html) => updateBlock(block.id, { content: html })}
+                  placeholder="Digite o texto aqui... Use a barra de ferramentas para formatar."
+                />
+                <AddBlockRow onAdd={(type) => addBlock(type, block.id)} />
+              </div>
+            )
+          }
 
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          style={{ display: 'none' }}
-          onChange={e => handleImageFiles(e.target.files)}
-        />
+          if (block.type === 'image') {
+            imgIdx++
+            const figNum = precedingImages + imgIdx
 
-        <div
-          className={`drop-zone ${dragging ? 'drag-over' : ''}`}
-          onClick={() => fileInputRef.current?.click()}
-          onDragOver={e => { e.preventDefault(); setDragging(true) }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={onDrop}
-        >
-          <div style={{ fontSize: 28, marginBottom: 8 }}>🖼️</div>
-          <div className="drop-zone-text">
-            <strong>Clique aqui</strong> ou arraste imagens para adicionar
-          </div>
-          <div className="drop-zone-text" style={{ fontSize: 11, marginTop: 4 }}>
-            PNG, JPG, WEBP suportados
-          </div>
-        </div>
+            return (
+              <div key={block.id} className="block-card block-image">
+                <div className="block-toolbar">
+                  <span className="block-type-label">🖼️ Figura {figNum}</span>
+                  <div className="block-actions">
+                    <button className="block-btn" title="Mover para cima" disabled={isFirst} onClick={() => moveBlock(block.id, 'up')}>↑</button>
+                    <button className="block-btn" title="Mover para baixo" disabled={isLast} onClick={() => moveBlock(block.id, 'down')}>↓</button>
+                    <button className="block-btn danger" title="Remover bloco" onClick={() => removeBlock(block.id)}>✕</button>
+                  </div>
+                </div>
 
-        {section.images.length > 0 && (
-          <div className="image-list">
-            {section.images.map((img, idx) => {
-              const figureNum = imageCount + idx + 1
-              return (
-                <div key={img.id} className="image-card">
-                  <img
-                    src={img.dataUrl}
-                    alt={img.caption || `Figura ${figureNum}`}
-                    className="image-preview"
-                  />
-                  <div className="image-fields">
-                    <div style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 600 }}>
-                      Figura {figureNum}
-                    </div>
-                    <div className="form-group" style={{ gap: 4 }}>
-                      <label className="form-label">Legenda</label>
-                      <input
-                        className="form-input"
-                        type="text"
-                        placeholder={`Ex: Figura ${figureNum} – Diagrama de fluxo do sistema`}
-                        value={img.caption}
-                        onChange={e => updateImage(img.id, 'caption', e.target.value)}
-                      />
-                    </div>
-                    <div className="form-group" style={{ gap: 4 }}>
-                      <label className="form-label">Fonte <span style={{ color: '#9ca3af', fontWeight: 400 }}>(opcional)</span></label>
-                      <input
-                        className="form-input"
-                        type="text"
-                        placeholder="Ex: Elaborado pelo autor, 2025 / IBGE, 2023"
-                        value={img.source}
-                        onChange={e => updateImage(img.id, 'source', e.target.value)}
-                      />
+                {block.dataUrl ? (
+                  <div className="image-block-preview-wrap">
+                    <img src={block.dataUrl} alt={block.caption} className="image-block-preview" />
+                    <button
+                      className="btn btn-secondary"
+                      style={{ fontSize: 12, alignSelf: 'flex-start' }}
+                      onClick={() => openFilePicker(block.id)}
+                    >
+                      Trocar imagem
+                    </button>
+                  </div>
+                ) : (
+                  <div
+                    className="drop-zone"
+                    onClick={() => openFilePicker(block.id)}
+                    onDragOver={e => e.preventDefault()}
+                    onDrop={e => { e.preventDefault(); handleFileInput(e.dataTransfer.files, block.id) }}
+                  >
+                    <div style={{ fontSize: 28, marginBottom: 6 }}>🖼️</div>
+                    <div className="drop-zone-text">
+                      <strong>Clique</strong> ou arraste a imagem aqui
                     </div>
                   </div>
-                  <button
-                    className="image-remove-btn"
-                    title="Remover imagem"
-                    onClick={() => removeImage(img.id)}
-                  >
-                    ✕
-                  </button>
+                )}
+
+                <div className="form-group" style={{ marginTop: 8 }}>
+                  <label className="form-label">Legenda</label>
+                  <input
+                    className="form-input"
+                    type="text"
+                    placeholder={`Ex: Figura ${figNum} – Diagrama de fluxo do sistema`}
+                    value={block.caption}
+                    onChange={e => updateBlock(block.id, { caption: e.target.value })}
+                  />
                 </div>
-              )
-            })}
-          </div>
-        )}
+                <div className="form-group" style={{ marginTop: 6 }}>
+                  <label className="form-label">Fonte <span style={{ color: '#9ca3af', fontWeight: 400 }}>(opcional)</span></label>
+                  <input
+                    className="form-input"
+                    type="text"
+                    placeholder="Ex: Elaborado pelo autor, 2025"
+                    value={block.source}
+                    onChange={e => updateBlock(block.id, { source: e.target.value })}
+                  />
+                </div>
+                <AddBlockRow onAdd={(type) => addBlock(type, block.id)} />
+              </div>
+            )
+          }
+
+          return null
+        })}
       </div>
+
+      {/* Add first block if section is empty */}
+      {section.blocks.length === 0 && (
+        <AddBlockRow onAdd={(type) => addBlock(type)} empty />
+      )}
+    </div>
+  )
+}
+
+function AddBlockRow({ onAdd, empty = false }) {
+  return (
+    <div className="add-block-row" style={{ marginTop: empty ? 0 : 6 }}>
+      <button className="add-block-btn" onClick={() => onAdd('text')}>
+        + Texto
+      </button>
+      <button className="add-block-btn" onClick={() => onAdd('image')}>
+        + Imagem
+      </button>
     </div>
   )
 }

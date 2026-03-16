@@ -1,4 +1,29 @@
 import jsPDF from 'jspdf'
+import { parseHtml, renderHtmlBlocks } from './htmlToPdf'
+
+// Tamanho do quadrado padrão para imagens (mm)
+const IMG_BOX = 80
+
+function getImageDimensions(dataUrl) {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight })
+    img.onerror = () => resolve({ w: 1, h: 1 })
+    img.src = dataUrl
+  })
+}
+
+// Calcula largura e altura para caber proporcionalmente dentro de um quadrado
+function fitInBox(natW, natH, box) {
+  const ratio = natW / natH
+  if (ratio >= 1) {
+    // Paisagem ou quadrado: limitar pela largura
+    return { w: box, h: box / ratio }
+  } else {
+    // Retrato: limitar pela altura
+    return { w: box * ratio, h: box }
+  }
+}
 
 // ABNT NBR 14724 measurements (in mm)
 const PAGE_W = 210
@@ -96,116 +121,99 @@ export async function generatePDF(doc) {
     })
   }
 
-  function writeWrappedText(text, opts = {}) {
-    if (!text.trim()) return
-    const paragraphs = text.split(/\n\n+/)
-    paragraphs.forEach((para, pi) => {
-      const trimmed = para.trim().replace(/\n/g, ' ')
-      if (!trimmed) return
-      if (pi > 0) y += lineHeightMm() * 0.3  // small gap between paragraphs
-      writeLine(trimmed, { ...opts, indent: PARA_INDENT })
-    })
-  }
 
   function skipLines(n = 1) {
     y += lineHeightMm() * n
   }
 
-  // ── COVER PAGE ───────────────────────────────────────────────────────────
-  // No page number on cover
-
-  pdf.setFont(FONT, 'bold')
-  pdf.setFontSize(12)
-
   const centerX = PAGE_W / 2
 
-  // Institution
-  if (info.institution) {
+  // ── COVER PAGE ───────────────────────────────────────────────────────────
+  if (info.includeCover) {
     pdf.setFont(FONT, 'bold')
     pdf.setFontSize(12)
-    const instLines = pdf.splitTextToSize(info.institution.toUpperCase(), CONTENT_W)
-    instLines.forEach(line => {
-      pdf.text(line, centerX, y, { align: 'center' })
-      y += ptToMm(12) * LINE_HEIGHT
-    })
-    skipLines(0.5)
-  }
 
-  // Course
-  if (info.course) {
-    pdf.setFont(FONT, 'normal')
-    const courseLines = pdf.splitTextToSize(info.course, CONTENT_W)
-    courseLines.forEach(line => {
-      pdf.text(line, centerX, y, { align: 'center' })
-      y += ptToMm(12) * LINE_HEIGHT
-    })
-  }
+    if (info.institution) {
+      const instLines = pdf.splitTextToSize(info.institution.toUpperCase(), CONTENT_W)
+      instLines.forEach(line => {
+        pdf.text(line, centerX, y, { align: 'center' })
+        y += ptToMm(12) * LINE_HEIGHT
+      })
+      skipLines(0.5)
+    }
 
-  // Title (centered, middle of page)
-  const titleY = PAGE_H / 2 - 20
-  y = Math.max(y + 30, titleY)
+    if (info.course) {
+      pdf.setFont(FONT, 'normal')
+      pdf.splitTextToSize(info.course, CONTENT_W).forEach(line => {
+        pdf.text(line, centerX, y, { align: 'center' })
+        y += ptToMm(12) * LINE_HEIGHT
+      })
+    }
 
-  if (info.title) {
-    pdf.setFont(FONT, 'bold')
-    pdf.setFontSize(14)
-    const titleLines = pdf.splitTextToSize(info.title.toUpperCase(), CONTENT_W)
-    titleLines.forEach(line => {
-      pdf.text(line, centerX, y, { align: 'center' })
-      y += ptToMm(14) * LINE_HEIGHT
-    })
-  }
+    const titleY = PAGE_H / 2 - 20
+    y = Math.max(y + 30, titleY)
 
-  if (info.subtitle) {
-    skipLines(0.5)
-    pdf.setFont(FONT, 'normal')
-    pdf.setFontSize(12)
-    const subLines = pdf.splitTextToSize(info.subtitle, CONTENT_W)
-    subLines.forEach(line => {
-      pdf.text(line, centerX, y, { align: 'center' })
-      y += ptToMm(12) * LINE_HEIGHT
-    })
-  }
+    if (info.title) {
+      pdf.setFont(FONT, 'bold')
+      pdf.setFontSize(14)
+      pdf.splitTextToSize(info.title.toUpperCase(), CONTENT_W).forEach(line => {
+        pdf.text(line, centerX, y, { align: 'center' })
+        y += ptToMm(14) * LINE_HEIGHT
+      })
+    }
 
-  // Author (bottom area)
-  y = PAGE_H - MARGIN_BOTTOM - 50
-  if (info.author) {
-    pdf.setFont(FONT, 'normal')
-    pdf.setFontSize(12)
-    const authorLines = pdf.splitTextToSize(info.author, CONTENT_W)
-    authorLines.forEach(line => {
-      pdf.text(line, centerX, y, { align: 'center' })
-      y += ptToMm(12) * LINE_HEIGHT
-    })
-  }
+    if (info.subtitle) {
+      skipLines(0.5)
+      pdf.setFont(FONT, 'normal')
+      pdf.setFontSize(12)
+      pdf.splitTextToSize(info.subtitle, CONTENT_W).forEach(line => {
+        pdf.text(line, centerX, y, { align: 'center' })
+        y += ptToMm(12) * LINE_HEIGHT
+      })
+    }
 
-  if (info.professor) {
-    skipLines(0.5)
-    pdf.setFont(FONT, 'normal')
-    const profLines = pdf.splitTextToSize(info.professor, CONTENT_W)
-    profLines.forEach(line => {
-      pdf.text(line, centerX, y, { align: 'center' })
-      y += ptToMm(12) * LINE_HEIGHT
-    })
-  }
+    y = PAGE_H - MARGIN_BOTTOM - 50
+    if (info.author) {
+      pdf.setFont(FONT, 'normal')
+      pdf.setFontSize(12)
+      pdf.splitTextToSize(info.author, CONTENT_W).forEach(line => {
+        pdf.text(line, centerX, y, { align: 'center' })
+        y += ptToMm(12) * LINE_HEIGHT
+      })
+    }
 
-  // City and year
-  y = PAGE_H - MARGIN_BOTTOM - 10
-  const cityYear = [info.city, info.year].filter(Boolean).join(', ')
-  if (cityYear) {
-    pdf.setFont(FONT, 'normal')
-    pdf.setFontSize(12)
-    pdf.text(cityYear, centerX, y, { align: 'center' })
+    if (info.professor) {
+      skipLines(0.5)
+      pdf.setFont(FONT, 'normal')
+      pdf.splitTextToSize(info.professor, CONTENT_W).forEach(line => {
+        pdf.text(line, centerX, y, { align: 'center' })
+        y += ptToMm(12) * LINE_HEIGHT
+      })
+    }
+
+    y = PAGE_H - MARGIN_BOTTOM - 10
+    const cityYear = [info.city, info.year].filter(Boolean).join(', ')
+    if (cityYear) {
+      pdf.setFont(FONT, 'normal')
+      pdf.setFontSize(12)
+      pdf.text(cityYear, centerX, y, { align: 'center' })
+    }
+
+    newPage()
   }
 
   // ── CONTENT PAGES ────────────────────────────────────────────────────────
-  newPage()
+  if (!info.includeCover) {
+    // First page already exists, just add page number
+    addPageNumber()
+  }
 
   const sectionNumbers = buildSectionNumbers(sections)
 
   // Track total figure count for numbering
   let figureCounter = 0
 
-  sections.forEach((section) => {
+  for (const section of sections) {
     const num = sectionNumbers[section.id]
 
     // Title spacing before
@@ -230,68 +238,69 @@ export async function generatePDF(doc) {
 
     skipLines(0.5)
 
-    // Body text
-    if (section.content.trim()) {
-      writeWrappedText(section.content, { fontSize: 12, fontStyle: 'normal', align: 'justify' })
-      skipLines(0.5)
-    }
-
-    // Images
-    section.images.forEach((img) => {
-      figureCounter++
-      const figNum = figureCounter
-
-      // Estimate image display dimensions (max 120mm wide, proportional)
-      const maxImgW = CONTENT_W
-      const maxImgH = 100
-
-      // Load image to get natural dimensions
-      checkPageBreak(maxImgH + 20)
-
-      // Center image
-      const imgX = MARGIN_LEFT
-
-      skipLines(0.5)
-
-      // Add image
-      try {
-        // Determine format from dataUrl
-        const format = img.dataUrl.includes('image/png') ? 'PNG'
-          : img.dataUrl.includes('image/webp') ? 'WEBP'
-          : 'JPEG'
-
-        pdf.addImage(img.dataUrl, format, imgX, y, maxImgW, maxImgH, undefined, 'FAST')
-        y += maxImgH + 4
-      } catch (e) {
-        console.warn('Could not add image:', e)
+    // Render blocks in order (text and image blocks interleaved)
+    for (const block of section.blocks) {
+      if (block.type === 'text') {
+        const htmlBlocks = parseHtml(block.content)
+        if (htmlBlocks.length > 0) {
+          y = renderHtmlBlocks(pdf, htmlBlocks, {
+            x: MARGIN_LEFT,
+            y,
+            maxWidth: CONTENT_W,
+            fontSize: FONT_SIZE_BODY,
+            font: FONT,
+            lineHeightFactor: LINE_HEIGHT,
+            paraIndent: PARA_INDENT,
+            checkPageBreak: (needed) => checkPageBreak(needed),
+          })
+          skipLines(0.3)
+        }
       }
 
-      // Caption below image (ABNT: centered, font size 10)
-      const captionText = img.caption
-        ? `Figura ${figNum} – ${img.caption}`
-        : `Figura ${figNum}`
+      if (block.type === 'image' && block.dataUrl) {
+        figureCounter++
+        const figNum = figureCounter
 
-      pdf.setFont(FONT, 'normal')
-      pdf.setFontSize(10)
-      const capLines = pdf.splitTextToSize(captionText, CONTENT_W)
-      capLines.forEach(line => {
-        pdf.text(line, centerX, y, { align: 'center' })
-        y += ptToMm(10) * LINE_HEIGHT
-      })
+        const { w: natW, h: natH } = await getImageDimensions(block.dataUrl)
+        const { w: imgW, h: imgH } = fitInBox(natW, natH, IMG_BOX)
+        const imgX = MARGIN_LEFT + (CONTENT_W - imgW) / 2
 
-      if (img.source) {
+        checkPageBreak(imgH + 20)
+        skipLines(0.5)
+
+        try {
+          const format = block.dataUrl.includes('image/png') ? 'PNG'
+            : block.dataUrl.includes('image/webp') ? 'WEBP'
+            : 'JPEG'
+          pdf.addImage(block.dataUrl, format, imgX, y, imgW, imgH, undefined, 'FAST')
+          y += imgH + 4
+        } catch (e) {
+          console.warn('Could not add image:', e)
+        }
+
+        // Caption (ABNT: abaixo da figura, centralizada, fonte 10)
+        const captionText = block.caption
+          ? `Figura ${figNum} – ${block.caption}`
+          : `Figura ${figNum}`
+
         pdf.setFont(FONT, 'normal')
         pdf.setFontSize(10)
-        const srcLines = pdf.splitTextToSize(`Fonte: ${img.source}`, CONTENT_W)
-        srcLines.forEach(line => {
+        pdf.splitTextToSize(captionText, CONTENT_W).forEach(line => {
           pdf.text(line, centerX, y, { align: 'center' })
           y += ptToMm(10) * LINE_HEIGHT
         })
-      }
 
-      skipLines(0.5)
-    })
-  })
+        if (block.source) {
+          pdf.splitTextToSize(`Fonte: ${block.source}`, CONTENT_W).forEach(line => {
+            pdf.text(line, centerX, y, { align: 'center' })
+            y += ptToMm(10) * LINE_HEIGHT
+          })
+        }
+
+        skipLines(0.5)
+      }
+    }
+  }
 
   // ── REFERENCES ───────────────────────────────────────────────────────────
   if (references.length > 0) {
