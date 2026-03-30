@@ -1,17 +1,5 @@
 import { useState } from 'react'
 
-function getSectionNumber(sections, sectionId) {
-  const counters = [0, 0, 0]
-  const numbers = {}
-  sections.forEach(s => {
-    const lvl = s.level - 1
-    counters[lvl]++
-    for (let i = lvl + 1; i < 3; i++) counters[i] = 0
-    numbers[s.id] = counters.slice(0, s.level).join('.')
-  })
-  return numbers[sectionId] || ''
-}
-
 export default function Sidebar({
   sections,
   activeView,
@@ -19,13 +7,20 @@ export default function Sidebar({
   onAddSection,
   onDeleteSection,
   onMoveSection,
+  onReorderSection,
   onGeneratePDF,
+  onPreviewPDF,
 }) {
-  const [addMenuOpen, setAddMenuOpen] = useState(false)
+  const [dragId, setDragId] = useState(null)
+  const [dragOverId, setDragOverId] = useState(null)
 
   const sectionNumbers = {}
   const counters = [0, 0, 0]
   sections.forEach(s => {
+    if (s.numbered === false) {
+      sectionNumbers[s.id] = null
+      return
+    }
     const lvl = s.level - 1
     counters[lvl]++
     for (let i = lvl + 1; i < 3; i++) counters[i] = 0
@@ -58,11 +53,34 @@ export default function Sidebar({
         {sections.map((section) => (
           <button
             key={section.id}
-            className={`sidebar-item level-${section.level} ${activeView === `section-${section.id}` ? 'active' : ''}`}
+            className={`sidebar-item level-${section.level} ${activeView === `section-${section.id}` ? 'active' : ''} ${dragOverId === section.id && dragId !== section.id ? 'drag-over-item' : ''}`}
             onClick={() => onNavigate(`section-${section.id}`)}
+            draggable
+            onDragStart={(e) => {
+              setDragId(section.id)
+              e.dataTransfer.effectAllowed = 'move'
+            }}
+            onDragOver={(e) => {
+              e.preventDefault()
+              setDragOverId(section.id)
+            }}
+            onDragLeave={() => setDragOverId(null)}
+            onDragEnd={() => {
+              setDragId(null)
+              setDragOverId(null)
+            }}
+            onDrop={(e) => {
+              e.preventDefault()
+              if (dragId !== null && dragId !== section.id) {
+                onReorderSection(dragId, section.id)
+              }
+              setDragId(null)
+              setDragOverId(null)
+            }}
+            style={dragId === section.id ? { opacity: 0.4 } : undefined}
           >
             <span style={{ fontSize: 11, opacity: 0.6, minWidth: 24 }}>
-              {sectionNumbers[section.id]}
+              {sectionNumbers[section.id] != null ? sectionNumbers[section.id] : '—'}
             </span>
             <span className="sidebar-item-name">
               {section.title || 'Sem título'}
@@ -110,6 +128,9 @@ export default function Sidebar({
             + Subseção
           </button>
         </div>
+        <button className="btn-preview" onClick={onPreviewPDF}>
+          👁 Pré-visualizar
+        </button>
         <button className="btn-generate" onClick={onGeneratePDF}>
           ⬇ Gerar PDF (ABNT)
         </button>

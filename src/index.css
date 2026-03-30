@@ -778,3 +778,91 @@ button { font-family: inherit; cursor: pointer; }
 .switch.switch-on .switch-thumb {
   left: 23px;
 }
+
+/* ---- Preview Modal ---- */
+.preview-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.preview-modal {
+  width: 90vw;
+  height: 90vh;
+  max-width: 1100px;
+  background: var(--bg-card);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.preview-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.preview-iframe {
+  flex: 1;
+  border: none;
+  background: #525659;
+}
+
+/* ---- Drag & Drop ---- */
+.sidebar-item.drag-over-item {
+  border-top: 2px solid var(--accent);
+  background: rgba(59, 91, 219, 0.1);
+}
+
+.sidebar-item[draggable="true"] {
+  cursor: grab;
+}
+
+.sidebar-item[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+/* ---- Preview Button ---- */
+.btn-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 6px;
+  border: 1.5px solid rgba(255,255,255,0.2);
+  background: transparent;
+  color: rgba(255,255,255,0.7);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-preview:hover {
+  border-color: rgba(255,255,255,0.4);
+  color: #fff;
+  background: rgba(255,255,255,0.05);
+}

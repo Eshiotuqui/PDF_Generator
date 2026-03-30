@@ -16,10 +16,11 @@ const createBlock = (type = 'text') => ({
   fileName: '',
 })
 
-const createSection = (id, title = '', level = 1) => ({
+const createSection = (id, title = '', level = 1, numbered = true) => ({
   id,
   title,
   level,
+  numbered,
   blocks: [createBlock('text')],
 })
 
@@ -34,6 +35,7 @@ const initialState = {
     city: '',
     year: new Date().getFullYear().toString(),
     includeCover: true,
+    includeTOC: false,
   },
   sections: [
     createSection(1, 'Introdução', 1),
@@ -46,6 +48,7 @@ export default function App() {
   const [doc, setDoc] = useState(initialState)
   const [activeView, setActiveView] = useState('info') // 'info' | 'section-{id}' | 'references'
   const [toast, setToast] = useState(null)
+  const [previewUrl, setPreviewUrl] = useState(null)
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type })
@@ -100,6 +103,19 @@ export default function App() {
     })
   }, [])
 
+  const reorderSection = useCallback((fromId, toId) => {
+    if (fromId === toId) return
+    setDoc(d => {
+      const sections = [...d.sections]
+      const fromIdx = sections.findIndex(s => s.id === fromId)
+      const toIdx = sections.findIndex(s => s.id === toId)
+      if (fromIdx === -1 || toIdx === -1) return d
+      const [moved] = sections.splice(fromIdx, 1)
+      sections.splice(toIdx, 0, moved)
+      return { ...d, sections }
+    })
+  }, [])
+
   // References
   const updateReferences = useCallback((refs) => {
     setDoc(d => ({ ...d, references: refs }))
@@ -117,6 +133,24 @@ export default function App() {
     }
   }
 
+  // PDF preview
+  const handlePreviewPDF = async () => {
+    try {
+      showToast('Gerando pré-visualização...', 'success')
+      if (previewUrl) URL.revokeObjectURL(previewUrl)
+      const url = await generatePDF(doc, { preview: true })
+      setPreviewUrl(url)
+    } catch (err) {
+      console.error(err)
+      showToast('Erro ao gerar pré-visualização.', 'error')
+    }
+  }
+
+  const closePreview = () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl)
+    setPreviewUrl(null)
+  }
+
   // Active section
   const activeSection = activeView.startsWith('section-')
     ? doc.sections.find(s => s.id === parseInt(activeView.replace('section-', ''), 10))
@@ -131,7 +165,9 @@ export default function App() {
         onAddSection={addSection}
         onDeleteSection={deleteSection}
         onMoveSection={moveSection}
+        onReorderSection={reorderSection}
         onGeneratePDF={handleGeneratePDF}
+        onPreviewPDF={handlePreviewPDF}
       />
 
       <main className="main-content">
@@ -158,6 +194,29 @@ export default function App() {
           />
         )}
       </main>
+
+      {previewUrl && (
+        <div className="preview-overlay" onClick={closePreview}>
+          <div className="preview-modal" onClick={e => e.stopPropagation()}>
+            <div className="preview-header">
+              <span className="preview-title">Pré-visualização do PDF</span>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-primary" onClick={handleGeneratePDF}>
+                  Baixar PDF
+                </button>
+                <button className="btn btn-secondary" onClick={closePreview}>
+                  Fechar
+                </button>
+              </div>
+            </div>
+            <iframe
+              src={previewUrl}
+              className="preview-iframe"
+              title="PDF Preview"
+            />
+          </div>
+        </div>
+      )}
 
       {toast && (
         <div className={`toast ${toast.type}`}>

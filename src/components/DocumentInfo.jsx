@@ -8,15 +8,26 @@ export default function DocumentInfo({ data, onChange }) {
             Preencha os dados que aparecerão na capa do documento conforme as normas ABNT.
           </p>
         </div>
-        <label className="switch-label">
-          <span className="switch-text">Incluir capa</span>
-          <div
-            className={`switch ${data.includeCover ? 'switch-on' : ''}`}
-            onClick={() => onChange('includeCover', !data.includeCover)}
-          >
-            <div className="switch-thumb" />
-          </div>
-        </label>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-end' }}>
+          <label className="switch-label">
+            <span className="switch-text">Incluir capa</span>
+            <div
+              className={`switch ${data.includeCover ? 'switch-on' : ''}`}
+              onClick={() => onChange('includeCover', !data.includeCover)}
+            >
+              <div className="switch-thumb" />
+            </div>
+          </label>
+          <label className="switch-label">
+            <span className="switch-text">Incluir sumário</span>
+            <div
+              className={`switch ${data.includeTOC ? 'switch-on' : ''}`}
+              onClick={() => onChange('includeTOC', !data.includeTOC)}
+            >
+              <div className="switch-thumb" />
+            </div>
+          </label>
+        </div>
       </div>
 
       <div className="form-grid">
@@ -66,14 +77,15 @@ export default function DocumentInfo({ data, onChange }) {
 
         <div className="form-group full">
           <label className="form-label">Autor(es)</label>
-          <input
+          <textarea
             className="form-input"
-            type="text"
-            placeholder="Ex: João Silva, Maria Souza"
+            rows={3}
+            placeholder={"Ex:\nJoão Silva - 123456\nMaria Souza - 789012"}
             value={data.author}
             onChange={e => onChange('author', e.target.value)}
+            style={{ resize: 'vertical', minHeight: 70, lineHeight: 1.7 }}
           />
-          <span className="form-hint">Para múltiplos autores, separe com vírgula.</span>
+          <span className="form-hint">Um autor por linha. Cada linha aparece separada na capa.</span>
         </div>
 
         <div className="form-group full">

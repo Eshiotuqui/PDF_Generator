@@ -17,10 +17,8 @@ function getImageDimensions(dataUrl) {
 function fitInBox(natW, natH, box) {
   const ratio = natW / natH
   if (ratio >= 1) {
-    // Paisagem ou quadrado: limitar pela largura
     return { w: box, h: box / ratio }
   } else {
-    // Retrato: limitar pela altura
     return { w: box * ratio, h: box }
   }
 }
@@ -33,10 +31,8 @@ const MARGIN_LEFT = 30
 const MARGIN_BOTTOM = 20
 const MARGIN_RIGHT = 20
 const CONTENT_W = PAGE_W - MARGIN_LEFT - MARGIN_RIGHT  // 160mm
-const CONTENT_H = PAGE_H - MARGIN_TOP - MARGIN_BOTTOM  // 247mm
 
 const FONT_SIZE_BODY = 12
-const FONT_SIZE_TITLE1 = 12   // same size, differ by style
 const LINE_HEIGHT = 1.5        // ABNT: 1.5 line spacing
 const PARA_INDENT = 12.5       // ABNT: 1.25cm paragraph indent
 const FONT = 'times'
@@ -51,6 +47,10 @@ function buildSectionNumbers(sections) {
   const counters = [0, 0, 0]
   const numbers = {}
   sections.forEach(s => {
+    if (s.numbered === false) {
+      numbers[s.id] = null
+      return
+    }
     const lvl = s.level - 1
     counters[lvl]++
     for (let i = lvl + 1; i < 3; i++) counters[i] = 0
@@ -59,7 +59,7 @@ function buildSectionNumbers(sections) {
   return numbers
 }
 
-export async function generatePDF(doc) {
+export async function generatePDF(doc, { preview = false } = {}) {
   const { documentInfo: info, sections, references } = doc
   const pdf = new jsPDF({ unit: 'mm', format: 'a4' })
 
@@ -121,7 +121,6 @@ export async function generatePDF(doc) {
     })
   }
 
-
   function skipLines(n = 1) {
     y += lineHeightMm() * n
   }
@@ -176,8 +175,9 @@ export async function generatePDF(doc) {
     if (info.author) {
       pdf.setFont(FONT, 'normal')
       pdf.setFontSize(12)
-      pdf.splitTextToSize(info.author, CONTENT_W).forEach(line => {
-        pdf.text(line, centerX, y, { align: 'center' })
+      const authors = info.author.split('\n').map(a => a.trim()).filter(Boolean)
+      authors.forEach(author => {
+        pdf.text(author, centerX, y, { align: 'center' })
         y += ptToMm(12) * LINE_HEIGHT
       })
     }
@@ -199,16 +199,55 @@ export async function generatePDF(doc) {
       pdf.text(cityYear, centerX, y, { align: 'center' })
     }
 
+    pageNum = 0  // Reset so first content page starts at 1
+    newPage()
+  }
+
+  // ── TABLE OF CONTENTS (SUMÁRIO) ─────────────────────────────────────────
+  const sectionNumbers = buildSectionNumbers(sections)
+  const numberedSections = sections.filter(s => s.numbered !== false)
+  const includeTOC = info.includeTOC && numberedSections.length > 0
+
+  // PDF page indices where TOC placeholder pages were created
+  const tocPdfPages = []
+  let tocPageCount = 0
+
+  if (includeTOC) {
+    // Estimate how many pages the TOC needs
+    const lh = lineHeightMm()
+    const tocTitleSpace = lh * 3 // title + spacing
+    const tocAvailableH = (PAGE_H - MARGIN_TOP - MARGIN_BOTTOM) - tocTitleSpace
+    const entriesPerPage = Math.floor(tocAvailableH / lh)
+    tocPageCount = Math.ceil(numberedSections.length / entriesPerPage) || 1
+
+    // If no cover, the first PDF page is the TOC page — add page number
+    if (!info.includeCover) {
+      pageNum = 1
+      addPageNumber()
+    }
+
+    // Record current page as first TOC placeholder
+    tocPdfPages.push(pdf.internal.getNumberOfPages())
+
+    // Add extra TOC pages if needed
+    for (let i = 1; i < tocPageCount; i++) {
+      newPage()
+      tocPdfPages.push(pdf.internal.getNumberOfPages())
+    }
+
+    // Move to next page for content
     newPage()
   }
 
   // ── CONTENT PAGES ────────────────────────────────────────────────────────
-  if (!info.includeCover) {
+  if (!info.includeCover && !includeTOC) {
     // First page already exists, just add page number
+    pageNum = 1
     addPageNumber()
   }
 
-  const sectionNumbers = buildSectionNumbers(sections)
+  // Track which display page each numbered section starts on
+  const sectionPageMap = {}
 
   // Track total figure count for numbering
   let figureCounter = 0
@@ -225,8 +264,13 @@ export async function generatePDF(doc) {
       skipLines(0.5)
     }
 
+    // Record page number for TOC (only numbered sections)
+    if (num != null) {
+      sectionPageMap[section.id] = pageNum
+    }
+
     // Section title formatting per ABNT
-    let titleText = `${num} ${section.title || 'Sem título'}`
+    let titleText = num ? `${num} ${section.title || 'Sem título'}` : (section.title || 'Sem título')
     if (section.level === 1) {
       titleText = titleText.toUpperCase()
       writeLine(titleText, { fontStyle: 'bold', fontSize: 12, align: 'left', indent: 0 })
@@ -251,7 +295,11 @@ export async function generatePDF(doc) {
             font: FONT,
             lineHeightFactor: LINE_HEIGHT,
             paraIndent: PARA_INDENT,
-            checkPageBreak: (needed) => checkPageBreak(needed),
+            checkPageBreak: (needed, currentY) => {
+              y = currentY // sync outer y with inner y
+              checkPageBreak(needed)
+              return y // return updated y (may have been reset by newPage)
+            },
           })
           skipLines(0.3)
         }
@@ -303,34 +351,152 @@ export async function generatePDF(doc) {
   }
 
   // ── REFERENCES ───────────────────────────────────────────────────────────
+  let referencesPage = null
   if (references.length > 0) {
     checkPageBreak(30)
     skipLines(1)
+
+    referencesPage = pageNum
 
     writeLine('REFERÊNCIAS', { fontStyle: 'bold', fontSize: 12, align: 'left', indent: 0 })
     skipLines(1)
 
     references.forEach((ref) => {
       if (!ref.text.trim()) return
-      // ABNT: hanging indent for references (first line normal, subsequent lines indented)
       pdf.setFont(FONT, 'normal')
       pdf.setFontSize(12)
 
       const lines = pdf.splitTextToSize(ref.text.trim(), CONTENT_W)
       const lh = ptToMm(12) * LINE_HEIGHT
 
-      lines.forEach((line, i) => {
+      lines.forEach((line) => {
         checkPageBreak(lh)
-        const xLine = i === 0 ? MARGIN_LEFT : MARGIN_LEFT  // both flush left per ABNT
-        pdf.text(line, xLine, y)
+        pdf.text(line, MARGIN_LEFT, y)
         y += lh
       })
 
-      skipLines(1) // one blank line between references (ABNT: single spacing within, double between)
+      skipLines(1)
     })
   }
 
-  // Save
+  // ── FILL TOC PAGES ───────────────────────────────────────────────────────
+  if (includeTOC && tocPdfPages.length > 0) {
+    const lh = lineHeightMm()
+    let tocY = MARGIN_TOP
+    let tocPageIdx = 0
+
+    pdf.setPage(tocPdfPages[tocPageIdx])
+
+    // Title: SUMÁRIO (centered, bold, uppercase — ABNT)
+    pdf.setFont(FONT, 'bold')
+    pdf.setFontSize(12)
+    pdf.setTextColor(0, 0, 0)
+    pdf.text('SUMÁRIO', centerX, tocY, { align: 'center' })
+    tocY += lh * 2
+
+    for (const section of numberedSections) {
+      // Check if we need to go to next TOC page
+      if (tocY + lh > PAGE_H - MARGIN_BOTTOM) {
+        tocPageIdx++
+        if (tocPageIdx < tocPdfPages.length) {
+          pdf.setPage(tocPdfPages[tocPageIdx])
+          tocY = MARGIN_TOP
+        }
+      }
+
+      const num = sectionNumbers[section.id]
+      const title = section.title || 'Sem título'
+      const pg = sectionPageMap[section.id] || '?'
+      const indent = (section.level - 1) * 10
+
+      // Style per level
+      if (section.level === 1) {
+        pdf.setFont(FONT, 'bold')
+      } else {
+        pdf.setFont(FONT, 'normal')
+      }
+      pdf.setFontSize(12)
+      pdf.setTextColor(0, 0, 0)
+
+      let entryText = `${num} ${title}`
+      if (section.level === 1) entryText = entryText.toUpperCase()
+
+      const textX = MARGIN_LEFT + indent
+      const pageNumStr = String(pg)
+
+      // Measure widths
+      const entryW = pdf.getStringUnitWidth(entryText) * 12 * ptToMm(1)
+      const pageNumW = pdf.getStringUnitWidth(pageNumStr) * 12 * ptToMm(1)
+      const dotsStart = textX + entryW + 2
+      const dotsEnd = PAGE_W - MARGIN_RIGHT - pageNumW - 2
+
+      // Draw entry text
+      pdf.text(entryText, textX, tocY)
+
+      // Draw leader dots
+      if (dotsEnd > dotsStart + 4) {
+        pdf.setFont(FONT, 'normal')
+        const dotChar = '.'
+        const dotW = pdf.getStringUnitWidth(dotChar + ' ') * 12 * ptToMm(1)
+        let dx = dotsStart
+        while (dx < dotsEnd) {
+          pdf.text('.', dx, tocY)
+          dx += dotW
+        }
+      }
+
+      // Draw page number (right-aligned)
+      pdf.setFont(FONT, 'normal')
+      pdf.text(pageNumStr, PAGE_W - MARGIN_RIGHT, tocY, { align: 'right' })
+
+      tocY += lh
+    }
+
+    // Also add REFERÊNCIAS to TOC if references exist
+    if (referencesPage != null) {
+      if (tocY + lh > PAGE_H - MARGIN_BOTTOM) {
+        tocPageIdx++
+        if (tocPageIdx < tocPdfPages.length) {
+          pdf.setPage(tocPdfPages[tocPageIdx])
+          tocY = MARGIN_TOP
+        }
+      }
+
+      pdf.setFont(FONT, 'bold')
+      pdf.setFontSize(12)
+      pdf.setTextColor(0, 0, 0)
+
+      const refText = 'REFERÊNCIAS'
+      const refPage = String(referencesPage)
+      const entryW = pdf.getStringUnitWidth(refText) * 12 * ptToMm(1)
+      const pageNumW = pdf.getStringUnitWidth(refPage) * 12 * ptToMm(1)
+      const dotsStart = MARGIN_LEFT + entryW + 2
+      const dotsEnd = PAGE_W - MARGIN_RIGHT - pageNumW - 2
+
+      pdf.text(refText, MARGIN_LEFT, tocY)
+
+      if (dotsEnd > dotsStart + 4) {
+        pdf.setFont(FONT, 'normal')
+        const dotW = pdf.getStringUnitWidth('. ') * 12 * ptToMm(1)
+        let dx = dotsStart
+        while (dx < dotsEnd) {
+          pdf.text('.', dx, tocY)
+          dx += dotW
+        }
+      }
+
+      pdf.setFont(FONT, 'normal')
+      pdf.text(refPage, PAGE_W - MARGIN_RIGHT, tocY, { align: 'right' })
+    }
+  }
+
+  // Save or preview
+  if (preview) {
+    const blob = pdf.output('blob')
+    return URL.createObjectURL(blob)
+  }
+
   const fileName = (info.title || 'documento').replace(/[^a-zA-Z0-9À-ÿ\s]/g, '').trim().replace(/\s+/g, '_')
   pdf.save(`${fileName}_ABNT.pdf`)
+  return null
 }

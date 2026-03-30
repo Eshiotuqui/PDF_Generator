@@ -22,6 +22,10 @@ function createBlock(type = 'text') {
 function getSectionNumber(sections, sectionId) {
   const counters = [0, 0, 0]
   for (const s of sections) {
+    if (s.numbered === false) {
+      if (s.id === sectionId) return null
+      continue
+    }
     const lvl = s.level - 1
     counters[lvl]++
     for (let i = lvl + 1; i < 3; i++) counters[i] = 0
@@ -110,7 +114,7 @@ export default function SectionEditor({ section, sections, onChange, onAddSubsec
       <div className="editor-header">
         <div className="editor-header-text">
           <h1 className="editor-title">
-            {sectionNumber && <span className="section-number-badge">{sectionNumber}</span>}{' '}
+            {sectionNumber != null && sectionNumber !== '' && <span className="section-number-badge">{sectionNumber}</span>}{' '}
             {section.title || 'Sem título'}
           </h1>
           <p className="editor-subtitle">{LEVEL_HINTS[section.level]}</p>
@@ -149,6 +153,19 @@ export default function SectionEditor({ section, sections, onChange, onAddSubsec
           </div>
         </div>
       </div>
+
+      <label className="switch-label" style={{ marginBottom: 16 }}>
+        <span className="switch-text">Seção numerada</span>
+        <div
+          className={`switch ${section.numbered !== false ? 'switch-on' : ''}`}
+          onClick={() => onChange(section.id, 'numbered', section.numbered === false)}
+        >
+          <div className="switch-thumb" />
+        </div>
+        <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+          {section.numbered !== false ? 'Aparece na numeração (1, 2, 3...)' : 'Sem numeração (ex: Sumário, Agradecimentos)'}
+        </span>
+      </label>
 
       <hr className="section-divider" />
 

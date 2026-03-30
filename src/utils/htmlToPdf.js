@@ -170,7 +170,7 @@ export function renderHtmlBlocks(pdf, blocks, opts) {
     const textX = x + blockIndent + prefixW
     const textMaxW = maxWidth - blockIndent - prefixW
 
-    checkPageBreak(lh)
+    y = checkPageBreak(lh, y)
 
     // Draw prefix on first line
     if (prefix) {
@@ -183,7 +183,7 @@ export function renderHtmlBlocks(pdf, blocks, opts) {
     // Empty block (blank line)
     if (block.runs.length === 0) {
       y += lh
-      checkPageBreak(lh)
+      y = checkPageBreak(lh, y)
       continue
     }
 
@@ -194,7 +194,7 @@ export function renderHtmlBlocks(pdf, blocks, opts) {
     let firstLineOfBlock = true
 
     const flushLine = () => {
-      if (lineSegs.length === 0) { y += lh; checkPageBreak(lh); return }
+      if (lineSegs.length === 0) { y += lh; y = checkPageBreak(lh, y); return }
       let sx = textX
       for (const seg of lineSegs) {
         pdf.setFont(font, fontStyle(seg))
@@ -207,7 +207,7 @@ export function renderHtmlBlocks(pdf, blocks, opts) {
       lineSegs = []
       lineW = 0
       y += lh
-      checkPageBreak(lh)
+      y = checkPageBreak(lh, y)
     }
 
     for (const run of block.runs) {
